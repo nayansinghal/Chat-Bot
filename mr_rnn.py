@@ -34,7 +34,7 @@ def build_graph(coarse_kwargs, n_hidden_coarse_prediction, nl_kwargs, gradient_c
 
     # Build coarse HRED graph
     with tf.variable_scope('coarse_sub-model'), tf.name_scope('coarse_sub-model'):
-        coarse_losses, _ = _build_HRED_graph(coarse_sequence_input, coarse_length_input, coarse_W_embedding, **coarse_kwargs)
+        coarse_losses, _ = _build_HRED_graph(coarse_sequence_input, coarse_length_input, coarse_W_embedding, **coarse_kwargs, attention = False)
 
     # Build coarse prediction encoder graph
     with tf.variable_scope('coarse_pred_encoder'), tf.name_scope('coarse_pred_encoder'):
@@ -44,7 +44,7 @@ def build_graph(coarse_kwargs, n_hidden_coarse_prediction, nl_kwargs, gradient_c
 
     # Build natural language HRED graph
     with tf.variable_scope('nl_sub-model'), tf.name_scope('nl_sub-model'):
-        nl_losses, _ = _build_HRED_graph(nl_sequence_input, nl_length_input, nl_W_embedding, **nl_kwargs, coarse_prediction_states = coarse_prediction_states)
+        nl_losses, _ = _build_HRED_graph(nl_sequence_input, nl_length_input, nl_W_embedding, **nl_kwargs, coarse_prediction_states = coarse_prediction_states, attention = True)
 
     # Do training
     losses = tf.concat(0, [coarse_losses, nl_losses])
@@ -92,7 +92,7 @@ def _build_coarse_prediction_encoder(sequence_input, length_input, W_embedding, 
     final_states = tf.pack(final_states, axis=1) # [batch_size, num_seq-1]
     return final_states
 
-def _build_HRED_graph(sequence_input, length_input, W_embedding, embedding_shape, num_seq, num_steps, batch_size, n_hidden_encoder, n_hidden_context, n_hidden_decoder, coarse_prediction_states = None):
+def _build_HRED_graph(sequence_input, length_input, W_embedding, embedding_shape, num_seq, num_steps, batch_size, n_hidden_encoder, n_hidden_context, n_hidden_decoder, coarse_prediction_states = None, attention = False):
     """Constructs a HRED graph.
 
     Arguments:
@@ -132,7 +132,7 @@ def _build_HRED_graph(sequence_input, length_input, W_embedding, embedding_shape
 
     # Encoder RNN
     with tf.name_scope('encoder'):
-        final_states_enc = _build_encoders(x_data, x_data_length, n_hidden_encoder, batch_size)
+        final_states_enc = _build_encoders(x_data, x_data_length, n_hidden_encoder, batch_size, attention)
 
     # Context RNN
     with tf.name_scope('context') as con_scope:
@@ -186,19 +186,46 @@ def _build_HRED_graph(sequence_input, length_input, W_embedding, embedding_shape
 
     return losses, total_loss
 
-def _build_encoders(x_sequences, x_length, n_hidden_enc, batch_size):
+def _attention_encoders(x_sequences, x_length, n_hidden_enc, batch_size, input_states):
+
+    with tf.variable_scope('encoder'):
+        final_states = []
+        W_enc2att = tf.get_variable('W_enc2att', [2*n_hidden_enc, 2*n_hidden_enc])
+        b_enc2att = tf.get_variable('b_enc2att', [2*n_hidden_enc])
+        V_enc2att = tf.get_variable('V_enc2att', [2*n_hidden_enc])
+
+        for input_state in input_states:
+            init_state_atts = [(tf.matmul(fs, W_enc2att) + b_enc2att) for fs in input_state]
+            softmax_input = [tf.mul(init_state_att, V_enc2att) for init_state_att in init_state_atts]
+            attention_weights = [tf.nn.softmax(fs) for fs in softmax_input]
+            output_vectors = sum([vector * attention_weight for vector, attention_weight in zip(input_state, attention_weights)])
+            final_states.append(output_vectors)
+    
+    return final_states
+
+def _build_encoders(x_sequences, x_length, n_hidden_enc, batch_size, attention = False):
     # x_sequences - list(num_seq - 1 *[batch_size, num_steps, emb_dim])
     with tf.variable_scope('encoder'):
         cell_fw = tf.nn.rnn_cell.GRUCell(n_hidden_enc)
         cell_bw = tf.nn.rnn_cell.GRUCell(n_hidden_enc)
         init_state = tf.zeros([batch_size, n_hidden_enc], dtype=tf.float32)
         final_states = []
+        output_states_all = []
         for (x_seq, x_len) in zip(x_sequences, x_length):
-            _, final_state = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, x_seq, initial_state_fw = init_state, initial_state_bw = init_state, sequence_length = tf.cast(x_len, tf.int64))
+            #output_states = [batch_size, num_steps, n_hidden_encoder]
+            output_states, final_state = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, x_seq, initial_state_fw = init_state, initial_state_bw = init_state, sequence_length = tf.cast(x_len, tf.int64))
             tf.get_variable_scope().reuse_variables()
             final_state_conc = tf.concat(1, final_state)
             final_states.append(final_state_conc)
-    return final_states
+
+            output_states = tf.concat(2, output_states)
+            output_states_all.append(tf.unpack(output_states, axis=1))
+
+    if attention == True:
+        encoder_att_states = _attention_encoders(x_sequences, x_length, n_hidden_enc, batch_size, output_states_all)
+        return encoder_att_states
+    else:
+        return final_states 
 
 def _build_decoders(y_sequences, y_length, n_hidden_dec, init_states, batch_size, emb_dim):
     # y_sequences - list(num_seq - 1 *list([batch_size, num_steps, emb_dim])
