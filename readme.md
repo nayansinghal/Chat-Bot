@@ -5,9 +5,8 @@ A bare-bones but working tensorflow implementation of the paper [Multiresolution
 * mr_rnn.py -- builds the graph
 * train.py -- to train the model
 * data_aux.py -- help functions to generate data
-* NB_tests.ipynb -- IPython notebook where the test sequence can be run
 
 ## Comments
 Built in Python 3.5.2 with Tensorflow 0.10.0.
 
-To run the program you have to add Googles w2v (from https://code.google.com/archive/p/word2vec/) to data/ or use random_embedding instead as well as add the extracted Ubuntu dialogoue corpus (from www.iulianserban.com/Files/UbuntuDialogueCorpus.zip) to data/. 
+To run the program you have to add Googles w2v (from https://code.google.com/archive/p/word2vec/) to data/ or use random_embedding or create UbuntuWord2Vec using train_word2vec instead as well as add the extracted Ubuntu dialogoue corpus (from www.iulianserban.com/Files/UbuntuDialogueCorpus.zip) to data/. 
