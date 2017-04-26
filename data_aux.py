@@ -6,15 +6,15 @@ from tensorflow.contrib import learn
 import gensim
 from gensim.models.word2vec import Word2Vec
 
-def generate_full_ubuntu_data_with_coarse(max_utterances = 6, max_tokens = 20, min_frequency_nl = 10, min_frequency_coarse = 10):
+def generate_full_ubuntu_data_with_coarse(nl_train, nl_valid, coarse_train, coarse_valid, max_utterances = 6, max_tokens = 20, min_frequency_nl = 10, min_frequency_coarse = 10):
 
     # Build natural language data set
-    nl_data_train, nl_length_train, nl_vocab_processor, train_lines =  generate_ubuntu_data(data_type = 'nl', data_set = 'training', max_utterances=max_utterances, max_tokens=max_tokens, min_frequency=min_frequency_nl)
-    nl_data_dev, nl_length_dev, _, dev_lines =  generate_ubuntu_data(data_type = 'nl', data_set = 'valid', max_utterances=max_utterances, max_tokens=max_tokens, min_frequency=min_frequency_coarse, vocab_processor=nl_vocab_processor)
+    nl_data_train, nl_length_train, nl_vocab_processor, train_lines =  generate_ubuntu_data(data_type = 'nl', data_set = nl_train, max_utterances=max_utterances, max_tokens=max_tokens, min_frequency=min_frequency_nl)
+    nl_data_dev, nl_length_dev, _, dev_lines =  generate_ubuntu_data(data_type = 'nl', data_set = nl_valid, max_utterances=max_utterances, max_tokens=max_tokens, min_frequency=min_frequency_coarse, vocab_processor=nl_vocab_processor)
 
     # Build coarse data set
-    coarse_data_train, coarse_length_train, coarse_vocab_processor, _ =  generate_ubuntu_data(data_type = 'coarse', data_set = 'training', max_utterances=max_utterances, max_tokens=max_tokens + 1, use_lines = train_lines)
-    coarse_data_dev, coarse_length_dev, _, _ =  generate_ubuntu_data(data_type = 'coarse', data_set = 'valid', max_utterances=max_utterances, max_tokens=max_tokens + 1, use_lines=dev_lines, vocab_processor=coarse_vocab_processor)
+    coarse_data_train, coarse_length_train, coarse_vocab_processor, _ =  generate_ubuntu_data(data_type = 'coarse', data_set = coarse_train, max_utterances=max_utterances, max_tokens=max_tokens + 1, use_lines = train_lines)
+    coarse_data_dev, coarse_length_dev, _, _ =  generate_ubuntu_data(data_type = 'coarse', data_set = coarse_valid, max_utterances=max_utterances, max_tokens=max_tokens + 1, use_lines=dev_lines, vocab_processor=coarse_vocab_processor)
 
     data_dictionary = {'nl_data_train' : nl_data_train,
         'nl_length_train' : nl_length_train,
@@ -45,9 +45,9 @@ def generate_ubuntu_data(data_type = 'nl', data_set = 'training', max_utterances
     # Get data from file
     data_str = []
     if data_type == 'nl':
-        path = './data/UbuntuDialogueCorpus/raw_' + data_set + '_text.txt'
+        path = data_set
     elif data_type == 'coarse':
-        path = './data/UbuntuDialogueCorpus/pos_' + data_set + '_text.txt'
+        path = data_set
     else:
         raise ValueError('Only \'nl\' or \'coarse\' are valid data_type arguments')
     used_lines = set()
@@ -175,10 +175,10 @@ def pretrained_embedding(vocab_processor):
 
     Requieres google news w2v downloaded from https://code.google.com/archive/p/word2vec/ in data
     """
-    if not os.path.exists('data/GoogleNews-vectors-negative300.bin'):
+    if not os.path.exists('word2vec/ubunutu_word2vec.model'):
         print('You need to have google news w2v downloaded (from https://code.google.com/archive/p/word2vec/) and placed in ./data/GoogleNews-vectors-negative300.bin')
         sys.exit()
-    w2v = gensim.models.KeyedVectors.load_word2vec_format('data/GoogleNews-vectors-negative300.bin', binary=True)
+    w2v = gensim.models.Word2Vec.load("word2vec/ubunutu_word2vec.model")
     w2v.init_sims(replace=True)
     gc.collect()
     words = [vocab_processor.vocabulary_.reverse(i) for i in range(vocab_processor.vocabulary_.__len__())]
@@ -188,7 +188,7 @@ def pretrained_embedding(vocab_processor):
         try:
             W_embeddings.append(w2v.__getitem__(w))
         except KeyError:
-            W_embeddings.append(np.random.uniform(-0.1, 0.1, 300)) # Boundries makes variance equal as the ones from google
+            W_embeddings.append(np.random.uniform(-0.1, 0.1, 50)) # Boundries makes variance equal as the ones from google
     del w2v
     gc.collect()
     W_embeddings = np.array(W_embeddings)
